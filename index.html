@@ -38,7 +38,7 @@ h1.big{font-weight:400;margin:0}
 .disc{position:absolute;aspect-ratio:1;border-radius:50%;background:center/cover no-repeat;filter:drop-shadow(0 8px 14px rgba(0,0,0,.35));animation:spin 2.4s linear infinite paused;cursor:pointer}
 .disc.back{left:.13%;top:0;width:64.3%;--r0:140deg}
 .disc.front{left:35.05%;top:25.59%;width:64.82%;--r0:0deg}
-#cover .vinyl:hover .disc,body.playing .disc{animation-play-state:running}
+#cover:hover .disc,#cover.spin .disc,body.playing .disc{animation-play-state:running}
 @keyframes spin{from{transform:rotate(var(--r0))}to{transform:rotate(calc(var(--r0) + 360deg))}}
 #cover h1{position:relative;font-size:clamp(56px,11vw,190px);line-height:1;letter-spacing:.01em;text-shadow:0 2px 3px rgba(30,20,12,.55),0 4px 22px rgba(30,20,12,.75),0 0 60px rgba(30,20,12,.5);pointer-events:none}
 #cover .hint{position:relative;margin-top:22px;font-size:17px;color:var(--ink);font-style:italic;text-shadow:0 1px 8px rgba(0,0,0,.9),0 0 2px rgba(0,0,0,.8)}
@@ -571,6 +571,8 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight' && e.shiftKey) $('fwd').click();
   if (e.key === 'ArrowLeft' && e.shiftKey) $('back').click();
 });
+// клик/тап по обложке — крутить или остановить пластинки (для тачпадов и телефонов)
+$('cover').addEventListener('click', () => $('cover').classList.toggle('spin'));
 // menu
 $('burger').onclick = () => $('menu').classList.add('open');
 $('menu').addEventListener('click', e => { if (e.target.tagName === 'A') { $('menu').classList.remove('open'); if (e.target.classList.contains('close')) e.preventDefault(); } });
