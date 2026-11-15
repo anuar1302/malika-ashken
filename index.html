@@ -106,6 +106,18 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
   .ctrls button{padding:6px}
   .ctrls .opt{display:none}
 }
+/* режим проверки для Малики (?check): ✓/✗ у каждой песни */
+.ck{display:none}
+body.check .ck{display:inline-flex;gap:6px;margin-left:auto;flex:none;align-self:center;padding-left:8px}
+.ck button{width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:rgba(0,0,0,.28);color:var(--ink);cursor:pointer;font:15px/1 system-ui,sans-serif;padding:0}
+.ck button:hover{border-color:var(--ink)}
+.song.ok .ck .y{background:#3f8f4f;border-color:#3f8f4f}
+.song.bad .ck .n{background:#b5452f;border-color:#b5452f}
+.song.bad>span:nth-child(2){text-decoration:underline wavy #d9705a;text-underline-offset:4px}
+#ckbar{display:none}
+body.check #ckbar{display:flex;position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:30;gap:10px;align-items:center;background:var(--bar);border:1px solid var(--line);border-radius:999px;padding:6px 8px 6px 14px;font-size:14px;color:var(--ink);white-space:nowrap;box-shadow:0 6px 20px rgba(0,0,0,.3)}
+#ckbar button{background:var(--ink);color:#3a2c20;border:0;border-radius:999px;padding:6px 12px;font:inherit;cursor:pointer}
+@media (max-width:760px){ body.check #ckbar{top:auto;bottom:96px;font-size:12px} .ck button{width:30px;height:30px} }
 /* режим отрывка/аудио: без окна видео */
 #player.audio{grid-template-columns:1fr auto}
 #player.audio .vid,#player.audio #vbtn{display:none}
@@ -626,6 +638,56 @@ $('cover').addEventListener('click', () => $('cover').classList.toggle('spin'));
 // menu
 $('burger').onclick = () => $('menu').classList.add('open');
 $('menu').addEventListener('click', e => { if (e.target.tagName === 'A') { $('menu').classList.remove('open'); if (e.target.classList.contains('close')) e.preventDefault(); } });
+
+// ===== режим проверки для Малики: ссылка с ?check =====
+// у каждой песни ✓ (стоит правильно) / ✗ (поменять, с комментарием); ответы хранятся в браузере,
+// кнопка «Отправить ответы» копирует итог (или скачивает .txt), его вставляют в комнату.
+(() => {
+  if (!/[?&]check\b/.test(location.search)) return;
+  document.body.classList.add('check');
+  const KEY = 'malika-check-v1';
+  let st = {}; try { st = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) {}
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} };
+  const bar = document.createElement('div'); bar.id = 'ckbar';
+  bar.innerHTML = '<span id="ckc"></span><button id="cks" type="button">Отправить ответы</button>';
+  document.body.appendChild(bar);
+  const count = () => { const v = Object.values(st);
+    $('ckc').textContent = 'Проверено ' + v.length + ' из ' + SONGS.length + ' · ✓ ' + v.filter(x => x.v === 'ok').length + ' · ✗ ' + v.filter(x => x.v === 'bad').length; };
+  const paint = (li, name) => { const r = st[name];
+    li.classList.toggle('ok', !!r && r.v === 'ok'); li.classList.toggle('bad', !!r && r.v === 'bad');
+    li.title = r && r.c ? 'Ваш комментарий: ' + r.c : ''; };
+  els.forEach(li => {
+    const name = SONGS[+li.dataset.i][0];
+    const box = document.createElement('span'); box.className = 'ck';
+    box.innerHTML = '<button type="button" class="y" title="Песня стоит правильно" aria-label="Правильно">✓</button><button type="button" class="n" title="Нужно поменять" aria-label="Поменять">✗</button>';
+    box.addEventListener('click', e => e.stopPropagation());
+    box.addEventListener('keydown', e => e.stopPropagation());
+    box.querySelector('.y').onclick = () => { if (st[name] && st[name].v === 'ok') delete st[name]; else st[name] = {v: 'ok', t: Date.now()}; save(); paint(li, name); count(); };
+    box.querySelector('.n').onclick = () => {
+      const old = st[name] && st[name].v === 'bad' ? (st[name].c || '') : '';
+      const c = prompt('«' + name + '»: что не так? Можно вставить ссылку на нужную версию. (Отмена — ничего не менять, стереть всё и OK — снять отметку)', old);
+      if (c === null) return;
+      if (old && !c.trim()) delete st[name]; else st[name] = {v: 'bad', c: c.trim(), t: Date.now()};
+      save(); paint(li, name); count(); };
+    li.appendChild(box); paint(li, name);
+  });
+  count();
+  const src = s => s[3] ? (s[3].startsWith('a:') ? 'её запись' : 'отрывок ' + (s[3].startsWith('d:') ? 'Deezer ' + s[3].slice(2) : 'Apple'))
+                        : (s[1] ? 'YouTube ' + s[1] : 'нет звука');
+  $('cks').onclick = async () => {
+    const bad = SONGS.filter(s => st[s[0]] && st[s[0]].v === 'bad'), ok = SONGS.filter(s => st[s[0]] && st[s[0]].v === 'ok');
+    if (!bad.length && !ok.length) { alert('Пока ничего не отмечено.'); return; }
+    let t = 'Проверка репертуара (' + new Date().toLocaleDateString('ru-RU') + '): отмечено ' + (bad.length + ok.length) + ' из ' + SONGS.length + ', ✓ ' + ok.length + ', ✗ ' + bad.length + '\n';
+    if (bad.length) t += '\nНужно поменять:\n' + bad.map((s, k) => (k + 1) + '. ' + s[0] + ' [' + s[2] + '; сейчас: ' + src(s) + ']' + (st[s[0]].c ? ' — ' + st[s[0]].c : '')).join('\n') + '\n';
+    if (ok.length) t += '\nВсё правильно: ' + ok.map(s => s[0]).join('; ') + '\n';
+    let copied = false;
+    try { await navigator.clipboard.writeText(t); copied = true; } catch (e) {}
+    if (copied) { alert('Ответы скопированы. Вставьте их в комнату с Claude (Ctrl+V или «Вставить») и отправьте. Отметки на странице сохраняются — можно продолжать проверку.'); return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([t], {type: 'text/plain;charset=utf-8'}));
+    a.download = 'проверка-репертуара.txt'; document.body.appendChild(a); a.click(); a.remove();
+    alert('Скачан файл «проверка-репертуара.txt» — перетащите его в комнату с Claude.');
+  };
+})();
 </script>
 </body>
 </html>
