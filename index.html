@@ -648,11 +648,33 @@ $('menu').addEventListener('click', e => { if (e.target.tagName === 'A') { $('me
   const KEY = 'malika-check-v1';
   let st = {}; try { st = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) {}
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} };
+  // отметки сразу уходят в Google Форму «Проверка репертуара Малики» → таблица «Ответы Малики по репертуару»
+  // (у Ануара в Google Drive). Одна отметка = одна строка; действует последняя строка по песне. Пусто — только браузер.
+  const FORM = 'https://docs.google.com/forms/d/e/1FAIpQLSeKhhV6jMlKBAsSrQVqVehz6Ztckb8GpBztLxKVCq3jiD4ivw/formResponse';
+  const F = {song: 'entry.2144381657', section: 'entry.1297553607', v: 'entry.131441153', c: 'entry.212611943', now: 'entry.388920083'};
+  const SHEET = FORM;
+  const src = s => s[3] ? (s[3].startsWith('a:') ? 'её запись' : 'отрывок ' + (s[3].startsWith('d:') ? 'Deezer ' + s[3].slice(2) : 'Apple'))
+                        : (s[1] ? 'YouTube ' + s[1] : 'нет звука');
+  const byName = {}; SONGS.forEach(s => { byName[s[0]] = s; });
+  const row = name => { const s = byName[name] || [name, '', '', ''], r = st[name];
+    return {song: name, section: s[2], v: r ? r.v : '', c: r && r.c || '', now: src(s), t: r ? r.t : Date.now()}; };
+  let sync = '';
+  const SENT = 'malika-check-sent-v1';  // песня → t последней доставленной отметки, чтобы не слать повторно
+  let sent = {}; try { sent = JSON.parse(localStorage.getItem(SENT) || '{}') || {}; } catch (e) {}
+  const push = rows => { if (!SHEET || !rows.length) return;
+    sync = ' · сохраняю…'; count();
+    const mark = v => v === 'ok' ? '✓ правильно' : v === 'bad' ? '✗ поменять' : 'снято';
+    Promise.all(rows.map(r => { const b = new URLSearchParams();
+        b.append(F.song, r.song); b.append(F.section, r.section || ''); b.append(F.v, mark(r.v)); b.append(F.c, r.c); b.append(F.now, r.now);
+        return fetch(SHEET, {method: 'POST', mode: 'no-cors', body: b}); }))
+      .then(() => { sync = ' · сохранено'; count();
+        rows.forEach(r => { sent[r.song] = r.v ? r.t : 0; }); try { localStorage.setItem(SENT, JSON.stringify(sent)); } catch (e) {} })
+      .catch(() => { sync = ' · нет связи, отметки в браузере'; count(); }); };
   const bar = document.createElement('div'); bar.id = 'ckbar';
   bar.innerHTML = '<span id="ckc"></span><button id="cks" type="button">Отправить ответы</button>';
   document.body.appendChild(bar);
   const count = () => { const v = Object.values(st);
-    $('ckc').textContent = 'Проверено ' + v.length + ' из ' + SONGS.length + ' · ✓ ' + v.filter(x => x.v === 'ok').length + ' · ✗ ' + v.filter(x => x.v === 'bad').length; };
+    $('ckc').textContent = 'Проверено ' + v.length + ' из ' + SONGS.length + ' · ✓ ' + v.filter(x => x.v === 'ok').length + ' · ✗ ' + v.filter(x => x.v === 'bad').length + sync; };
   const paint = (li, name) => { const r = st[name];
     li.classList.toggle('ok', !!r && r.v === 'ok'); li.classList.toggle('bad', !!r && r.v === 'bad');
     li.title = r && r.c ? 'Ваш комментарий: ' + r.c : ''; };
@@ -662,18 +684,19 @@ $('menu').addEventListener('click', e => { if (e.target.tagName === 'A') { $('me
     box.innerHTML = '<button type="button" class="y" title="Песня стоит правильно" aria-label="Правильно">✓</button><button type="button" class="n" title="Нужно поменять" aria-label="Поменять">✗</button>';
     box.addEventListener('click', e => e.stopPropagation());
     box.addEventListener('keydown', e => e.stopPropagation());
-    box.querySelector('.y').onclick = () => { if (st[name] && st[name].v === 'ok') delete st[name]; else st[name] = {v: 'ok', t: Date.now()}; save(); paint(li, name); count(); };
+    box.querySelector('.y').onclick = () => { if (st[name] && st[name].v === 'ok') delete st[name]; else st[name] = {v: 'ok', t: Date.now()}; save(); paint(li, name); count(); push([row(name)]); };
     box.querySelector('.n').onclick = () => {
       const old = st[name] && st[name].v === 'bad' ? (st[name].c || '') : '';
       const c = prompt('«' + name + '»: что не так? Можно вставить ссылку на нужную версию. (Отмена — ничего не менять, стереть всё и OK — снять отметку)', old);
       if (c === null) return;
       if (old && !c.trim()) delete st[name]; else st[name] = {v: 'bad', c: c.trim(), t: Date.now()};
-      save(); paint(li, name); count(); };
+      save(); paint(li, name); count(); push([row(name)]); };
     li.appendChild(box); paint(li, name);
   });
   count();
-  const src = s => s[3] ? (s[3].startsWith('a:') ? 'её запись' : 'отрывок ' + (s[3].startsWith('d:') ? 'Deezer ' + s[3].slice(2) : 'Apple'))
-                        : (s[1] ? 'YouTube ' + s[1] : 'нет звука');
+  // при открытии досылаем всё, что уже отмечено в этом браузере (в т.ч. отметки до подключения таблицы)
+  push(Object.keys(st).filter(n => sent[n] !== st[n].t).map(row));
+  if (SHEET) $('cks').textContent = 'Скопировать ответы';
   $('cks').onclick = async () => {
     const bad = SONGS.filter(s => st[s[0]] && st[s[0]].v === 'bad'), ok = SONGS.filter(s => st[s[0]] && st[s[0]].v === 'ok');
     if (!bad.length && !ok.length) { alert('Пока ничего не отмечено.'); return; }
